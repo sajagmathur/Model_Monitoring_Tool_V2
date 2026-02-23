@@ -3,6 +3,7 @@ const API_BASE = (typeof window !== 'undefined' && window.__CONFIG__ && window._
 
 // Track if backend is available
 let backendAvailable = null;
+let backendCheckPromise = null;
 
 const filterPortfolio = document.getElementById('filter-portfolio');
 const filterModelType = document.getElementById('filter-model-type');
@@ -38,28 +39,66 @@ let activeRagFilter = null;
 
 let portfolioRagPieChart = null;
 
+// Check if backend is available with fast timeout
+async function checkBackendAvailability() {
+  if (backendCheckPromise) return backendCheckPromise;
+  
+  backendCheckPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000); // 1 second timeout
+      
+      const response = await fetch(`${API_BASE}/health`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      backendAvailable = response.ok;
+      console.log(backendAvailable ? '✓ Using live backend API' : '✗ Backend returned error, using demo mode');
+      return backendAvailable;
+    } catch (error) {
+      backendAvailable = false;
+      console.log('✓ Using demo mode with mock data (backend not running)');
+      return false;
+    }
+  })();
+  
+  return backendCheckPromise;
+}
+
 // Helper function to try backend API, fallback to mock data
 async function tryApiOrMock(apiCall, mockCall) {
+  // Check backend availability if not already checked
+  if (backendAvailable === null) {
+    await checkBackendAvailability();
+  }
+  
+  // If backend is known to be unavailable, use mock directly
+  if (backendAvailable === false) {
+    return mockCall();
+  }
+  
+  // Try backend API
   try {
-    const result = await apiCall();
-    if (backendAvailable === null) {
-      backendAvailable = true;
-      console.log('Using live backend API');
-    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+    
+    const result = await apiCall(controller.signal);
+    clearTimeout(timeoutId);
     return result;
   } catch (error) {
-    if (backendAvailable === null) {
-      backendAvailable = false;
-      console.log('Backend unavailable, using demo mock data');
-    }
+    // Fallback to mock on error
+    console.log('API call failed, using mock data');
+    backendAvailable = false;
     return mockCall();
   }
 }
 
 async function getFilterOptions() {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/filter-options`);
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/filter-options`, { signal });
       if (!res.ok) throw new Error('Filter options failed');
       return res.json();
     },
@@ -69,9 +108,9 @@ async function getFilterOptions() {
 
 async function getSummary(params = {}) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       const q = new URLSearchParams(params).toString();
-      const res = await fetch(`${API_BASE}/api/metrics/summary?${q}`);
+      const res = await fetch(`${API_BASE}/api/metrics/summary?${q}`, { signal });
       if (!res.ok) throw new Error('Summary failed');
       return res.json();
     },
@@ -81,10 +120,10 @@ async function getSummary(params = {}) {
 
 async function getDetail(modelId, vintage, segment) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       let url = `${API_BASE}/api/metrics/detail/${encodeURIComponent(modelId)}?vintage=${encodeURIComponent(vintage)}`;
       if (segment) url += `&segment=${encodeURIComponent(segment)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error('Detail failed');
       return res.json();
     },
@@ -94,8 +133,8 @@ async function getDetail(modelId, vintage, segment) {
 
 async function getModels() {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/models`);
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/models`, { signal });
       if (!res.ok) throw new Error('Models failed');
       return res.json();
     },
@@ -105,10 +144,10 @@ async function getModels() {
 
 async function getTrends(modelId, segment) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       let url = `${API_BASE}/api/metrics/trends?model_id=${encodeURIComponent(modelId)}`;
       if (segment) url += `&segment=${encodeURIComponent(segment)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error('Trends failed');
       return res.json();
     },
@@ -121,11 +160,12 @@ let workflowDatasetId = null;
 
 async function workflowIngest(body) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       const res = await fetch(`${API_BASE}/api/ingest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
       return res.json();
@@ -136,8 +176,8 @@ async function workflowIngest(body) {
 
 async function workflowGetDataset(id) {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/dataset/${encodeURIComponent(id)}`);
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/dataset/${encodeURIComponent(id)}`, { signal });
       if (!res.ok) throw new Error('Dataset not found');
       return res.json();
     },
@@ -147,11 +187,12 @@ async function workflowGetDataset(id) {
 
 async function workflowRunQc(id) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       const res = await fetch(`${API_BASE}/api/qc/${encodeURIComponent(id)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
+        signal
       });
       if (!res.ok) throw new Error('QC failed');
       return res.json();
@@ -162,8 +203,11 @@ async function workflowRunQc(id) {
 
 async function workflowScoreDataset(id) {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/score-dataset/${encodeURIComponent(id)}`, { method: 'POST' });
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/score-dataset/${encodeURIComponent(id)}`, { 
+        method: 'POST',
+        signal 
+      });
       if (!res.ok) throw new Error('Scoring failed');
       return res.json();
     },
@@ -173,11 +217,12 @@ async function workflowScoreDataset(id) {
 
 async function workflowComputeMetrics(datasetId, modelType) {
   return tryApiOrMock(
-    async () => {
+    async (signal) => {
       const res = await fetch(`${API_BASE}/api/compute-metrics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataset_id: datasetId, model_type: modelType }),
+        signal
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Compute failed');
       return res.json();
@@ -940,8 +985,8 @@ async function loadPortfolioView(params, metricsOverride) {
 
 async function getVariableStability(modelId, vintage) {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/metrics/variable-stability?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/metrics/variable-stability?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`, { signal });
       if (!res.ok) throw new Error('Stability failed');
       return res.json();
     },
@@ -951,8 +996,8 @@ async function getVariableStability(modelId, vintage) {
 
 async function getSegmentMetrics(modelId, vintage) {
   return tryApiOrMock(
-    async () => {
-      const res = await fetch(`${API_BASE}/api/metrics/segments?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
+    async (signal) => {
+      const res = await fetch(`${API_BASE}/api/metrics/segments?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`, { signal });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Segments failed');
