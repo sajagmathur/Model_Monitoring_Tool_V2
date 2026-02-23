@@ -1,6 +1,9 @@
 // Use window.__CONFIG__?.API_BASE for deployment (set in index.html or config.js)
 const API_BASE = (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.API_BASE) || 'http://127.0.0.1:5000';
 
+// Track if backend is available
+let backendAvailable = null;
+
 const filterPortfolio = document.getElementById('filter-portfolio');
 const filterModelType = document.getElementById('filter-model-type');
 const filterVintage = document.getElementById('filter-vintage');
@@ -35,84 +38,152 @@ let activeRagFilter = null;
 
 let portfolioRagPieChart = null;
 
+// Helper function to try backend API, fallback to mock data
+async function tryApiOrMock(apiCall, mockCall) {
+  try {
+    const result = await apiCall();
+    if (backendAvailable === null) {
+      backendAvailable = true;
+      console.log('Using live backend API');
+    }
+    return result;
+  } catch (error) {
+    if (backendAvailable === null) {
+      backendAvailable = false;
+      console.log('Backend unavailable, using demo mock data');
+    }
+    return mockCall();
+  }
+}
+
 async function getFilterOptions() {
-  const res = await fetch(`${API_BASE}/api/filter-options`);
-  if (!res.ok) throw new Error('Filter options failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/filter-options`);
+      if (!res.ok) throw new Error('Filter options failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getFilterOptions()
+  );
 }
 
 async function getSummary(params = {}) {
-  const q = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}/api/metrics/summary?${q}`);
-  if (!res.ok) throw new Error('Summary failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/api/metrics/summary?${q}`);
+      if (!res.ok) throw new Error('Summary failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getSummary(params)
+  );
 }
 
 async function getDetail(modelId, vintage, segment) {
-  let url = `${API_BASE}/api/metrics/detail/${encodeURIComponent(modelId)}?vintage=${encodeURIComponent(vintage)}`;
-  if (segment) url += `&segment=${encodeURIComponent(segment)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Detail failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      let url = `${API_BASE}/api/metrics/detail/${encodeURIComponent(modelId)}?vintage=${encodeURIComponent(vintage)}`;
+      if (segment) url += `&segment=${encodeURIComponent(segment)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Detail failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getDetail(modelId, vintage, segment)
+  );
 }
 
 async function getModels() {
-  const res = await fetch(`${API_BASE}/api/models`);
-  if (!res.ok) throw new Error('Models failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/models`);
+      if (!res.ok) throw new Error('Models failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getModels()
+  );
 }
 
 async function getTrends(modelId, segment) {
-  let url = `${API_BASE}/api/metrics/trends?model_id=${encodeURIComponent(modelId)}`;
-  if (segment) url += `&segment=${encodeURIComponent(segment)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Trends failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      let url = `${API_BASE}/api/metrics/trends?model_id=${encodeURIComponent(modelId)}`;
+      if (segment) url += `&segment=${encodeURIComponent(segment)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Trends failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getTrends(modelId, segment)
+  );
 }
 
 // --- Data workflow state and API ---
 let workflowDatasetId = null;
 
 async function workflowIngest(body) {
-  const res = await fetch(`${API_BASE}/api/ingest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/ingest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+      return res.json();
+    },
+    () => window.MOCK_API.ingest(body)
+  );
 }
 
 async function workflowGetDataset(id) {
-  const res = await fetch(`${API_BASE}/api/dataset/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error('Dataset not found');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/dataset/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error('Dataset not found');
+      return res.json();
+    },
+    () => window.MOCK_API.getDataset(id)
+  );
 }
 
 async function workflowRunQc(id) {
-  const res = await fetch(`${API_BASE}/api/qc/${encodeURIComponent(id)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) throw new Error('QC failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/qc/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error('QC failed');
+      return res.json();
+    },
+    () => window.MOCK_API.runQc(id)
+  );
 }
 
 async function workflowScoreDataset(id) {
-  const res = await fetch(`${API_BASE}/api/score-dataset/${encodeURIComponent(id)}`, { method: 'POST' });
-  if (!res.ok) throw new Error('Scoring failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/score-dataset/${encodeURIComponent(id)}`, { method: 'POST' });
+      if (!res.ok) throw new Error('Scoring failed');
+      return res.json();
+    },
+    () => window.MOCK_API.scoreDataset(id)
+  );
 }
 
 async function workflowComputeMetrics(datasetId, modelType) {
-  const res = await fetch(`${API_BASE}/api/compute-metrics`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dataset_id: datasetId, model_type: modelType }),
-  });
-  if (!res.ok) throw new Error((await res.json()).error || 'Compute failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/compute-metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataset_id: datasetId, model_type: modelType }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Compute failed');
+      return res.json();
+    },
+    () => window.MOCK_API.computeMetrics(datasetId, modelType)
+  );
 }
 
 function setWorkflowStepDone(stepNum, text) {
@@ -328,7 +399,18 @@ async function init() {
   let opts = null;
   try {
     opts = await getFilterOptions();
-    if (loadWarning) loadWarning.classList.add('hidden');
+    if (loadWarning) {
+      if (backendAvailable === false) {
+        // Using mock data successfully
+        loadWarning.classList.remove('hidden');
+        loadWarning.style.background = '#e3f2fd';
+        loadWarning.style.borderColor = '#2196f3';
+        loadWarning.style.color = '#0d47a1';
+        loadWarning.innerHTML = '📊 <strong>Demo Mode:</strong> Displaying sample data. To use live data, run <code>run_app.ps1</code> locally and open <strong>http://127.0.0.1:8080</strong>';
+      } else {
+        loadWarning.classList.add('hidden');
+      }
+    }
     initFilters(opts);
     applyFilters();
     initKsPsiAnalysis(opts);
@@ -337,7 +419,14 @@ async function init() {
     if (opts) initVariableStability(opts);
   } catch (e) {
     if (loadWarning) loadWarning.classList.remove('hidden');
-    if (loadWarning) loadWarning.innerHTML = 'Cannot reach API. Run <code>run_app.ps1</code> from the project folder (or run_backend.ps1 + run_frontend.ps1), then open <strong>http://127.0.0.1:8080</strong> in your browser.';
+    const isGitHubPages = (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.isGitHubPages);
+    const apiBase = (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.API_BASE) || 'http://127.0.0.1:5000';
+    
+    if (isGitHubPages) {
+      if (loadWarning) loadWarning.innerHTML = `Cannot reach API at <strong>${apiBase}</strong>. <br/>GitHub Pages cannot host backends. For full functionality, deploy your backend API and configure the URL in <code>config.js</code>. <br/>To test locally: Run <code>run_app.ps1</code> and open <strong>http://127.0.0.1:8080</strong> in your browser.`;
+    } else {
+      if (loadWarning) loadWarning.innerHTML = `Cannot reach API. Run <code>run_app.ps1</code> from the project folder (or run_backend.ps1 + run_frontend.ps1), then open <strong>http://127.0.0.1:8080</strong> in your browser.`;
+    }
   }
   btnApply.addEventListener('click', applyFilters);
 
@@ -850,18 +939,28 @@ async function loadPortfolioView(params, metricsOverride) {
 }
 
 async function getVariableStability(modelId, vintage) {
-  const res = await fetch(`${API_BASE}/api/metrics/variable-stability?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
-  if (!res.ok) throw new Error('Stability failed');
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/metrics/variable-stability?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
+      if (!res.ok) throw new Error('Stability failed');
+      return res.json();
+    },
+    () => window.MOCK_API.getVariableStability(modelId, vintage)
+  );
 }
 
 async function getSegmentMetrics(modelId, vintage) {
-  const res = await fetch(`${API_BASE}/api/metrics/segments?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Segments failed');
-  }
-  return res.json();
+  return tryApiOrMock(
+    async () => {
+      const res = await fetch(`${API_BASE}/api/metrics/segments?model_id=${encodeURIComponent(modelId)}&vintage=${encodeURIComponent(vintage)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Segments failed');
+      }
+      return res.json();
+    },
+    () => window.MOCK_API.getSegmentMetrics(modelId, vintage)
+  );
 }
 
 function initSegmentLevel(opts) {
