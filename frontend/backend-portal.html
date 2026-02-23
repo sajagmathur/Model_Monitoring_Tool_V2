@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Backend Portal | Model Monitoring</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: #f0f2f5; color: #1a1a1a; }
+    .header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .header h1 { margin: 0; font-size: 1.35rem; }
+    .header a {
+      color: #fff;
+      text-decoration: none;
+      padding: 0.4rem 0.8rem;
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .header a:hover { background: rgba(255,255,255,0.15); }
+    .main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 2rem; }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card h2 { margin: 0 0 1rem 0; font-size: 1.1rem; color: #1e3a5f; }
+    .status-ok { color: #2e7d32; font-weight: 600; }
+    .status-fail { color: #c62828; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+    th { background: #f5f7fa; font-weight: 600; color: #333; }
+    tr:hover { background: #f8f9fb; }
+    .loading { color: #666; font-style: italic; }
+    .hidden { display: none !important; }
+    .api-list { list-style: none; padding: 0; margin: 0; }
+    .api-list li { padding: 0.4rem 0; border-bottom: 1px solid #eee; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .api-list li:last-child { border-bottom: none; }
+    .method { font-weight: 600; min-width: 3.5rem; }
+    .method.get { color: #1565c0; }
+    .method.post { color: #2e7d32; }
+    .path { font-family: monospace; font-size: 0.9rem; color: #333; }
+    .desc { font-size: 0.85rem; color: #666; width: 100%; margin-top: 0.2rem; }
+    .empty { color: #888; font-style: italic; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>Backend Portal</h1>
+    <span style="opacity:0.9; font-size:0.9rem;">Model Monitoring API</span>
+    <a href="index.html">← Main app</a>
+  </header>
+
+  <main class="main">
+    <section class="card">
+      <h2>Service status</h2>
+      <div id="health-loading" class="loading">Checking…</div>
+      <div id="health-result" class="hidden"></div>
+    </section>
+
+    <section class="card">
+      <h2>API reference</h2>
+      <ul class="api-list">
+        <li><span class="method get">GET</span> <span class="path">/health</span><div class="desc">Health check</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/filter-options</span><div class="desc">Portfolios, model types, vintages</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/models</span><div class="desc">List models for dropdowns</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/datasets</span><div class="desc">List all ingested datasets</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/metrics/summary?portfolio=&model_type=&vintage=</span><div class="desc">Metrics summary (optional filters)</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/metrics/detail/&lt;model_id&gt;?vintage=</span><div class="desc">Full metrics + explainability for one model</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/metrics/trends?model_id=</span><div class="desc">KS, PSI, volume trends by vintage</div></li>
+        <li><span class="method get">GET</span> <span class="path">/api/dataset/&lt;dataset_id&gt;</span><div class="desc">Dataset status (qc_status, has_scores)</div></li>
+        <li><span class="method post">POST</span> <span class="path">/api/ingest</span><div class="desc">Body: portfolio, model_type, model_id, vintage, data (JSON array)</div></li>
+        <li><span class="method post">POST</span> <span class="path">/api/qc/&lt;dataset_id&gt;</span><div class="desc">Run QC (body: optional required_columns)</div></li>
+        <li><span class="method post">POST</span> <span class="path">/api/score-dataset/&lt;dataset_id&gt;</span><div class="desc">Mock scoring (adds score if missing)</div></li>
+        <li><span class="method post">POST</span> <span class="path">/api/compute-metrics</span><div class="desc">Body: dataset_id, model_type, optional baseline_scores</div></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Datasets</h2>
+      <div id="datasets-loading" class="loading">Loading…</div>
+      <div id="datasets-wrap" class="hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>Dataset ID</th>
+              <th>Portfolio</th>
+              <th>Model type</th>
+              <th>Model ID</th>
+              <th>Vintage</th>
+              <th>QC status</th>
+              <th>Rows</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="datasets-tbody"></tbody>
+        </table>
+        <p id="datasets-empty" class="empty hidden">No datasets yet. Use the main app to upload data.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Models (registry)</h2>
+      <div id="models-loading" class="loading">Loading…</div>
+      <div id="models-wrap" class="hidden">
+        <table>
+          <thead>
+            <tr><th>Model ID</th><th>Portfolio</th><th>Model type</th></tr>
+          </thead>
+          <tbody id="models-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = (window.__CONFIG__ && window.__CONFIG__.API_BASE) || 'http://127.0.0.1:5000';
+
+    async function checkHealth() {
+      const loading = document.getElementById('health-loading');
+      const result = document.getElementById('health-result');
+      try {
+        const res = await fetch(API_BASE + '/health');
+        const data = await res.json();
+        result.innerHTML = res.ok
+          ? '<span class="status-ok">● Live</span> – ' + (data.service || 'model-monitoring') + ' – ' + (data.status || 'ok')
+          : '<span class="status-fail">● Error</span> ' + (data.error || res.status);
+        result.classList.remove('hidden');
+      } catch (e) {
+        result.innerHTML = '<span class="status-fail">● Unreachable</span> – ' + (e.message || 'Cannot reach backend. Start with run_backend.ps1');
+        result.classList.remove('hidden');
+      }
+      loading.classList.add('hidden');
+    }
+
+    async function loadDatasets() {
+      const loading = document.getElementById('datasets-loading');
+      const wrap = document.getElementById('datasets-wrap');
+      const tbody = document.getElementById('datasets-tbody');
+      const empty = document.getElementById('datasets-empty');
+      try {
+        const res = await fetch(API_BASE + '/api/datasets');
+        const data = await res.json();
+        const list = data.datasets || [];
+        wrap.classList.remove('hidden');
+        loading.classList.add('hidden');
+        if (list.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+        tbody.innerHTML = list.map(d =>
+          `<tr>
+            <td>${d.dataset_id}</td>
+            <td>${d.portfolio}</td>
+            <td>${d.model_type}</td>
+            <td>${d.model_id}</td>
+            <td>${d.vintage}</td>
+            <td>${d.qc_status}</td>
+            <td>${d.row_count}</td>
+            <td>${d.created_at ? d.created_at.replace('Z','').slice(0,19) : '–'}</td>
+          </tr>`
+        ).join('');
+      } catch (e) {
+        wrap.classList.remove('hidden');
+        loading.classList.add('hidden');
+        tbody.innerHTML = '<tr><td colspan="8">Failed to load: ' + (e.message || e) + '</td></tr>';
+      }
+    }
+
+    async function loadModels() {
+      const loading = document.getElementById('models-loading');
+      const wrap = document.getElementById('models-wrap');
+      const tbody = document.getElementById('models-tbody');
+      try {
+        const res = await fetch(API_BASE + '/api/models');
+        const data = await res.json();
+        const list = data.models || [];
+        wrap.classList.remove('hidden');
+        loading.classList.add('hidden');
+        tbody.innerHTML = list.map(m =>
+          `<tr><td>${m.model_id}</td><td>${m.portfolio}</td><td>${m.model_type}</td></tr>`
+        ).join('');
+      } catch (e) {
+        wrap.classList.remove('hidden');
+        loading.classList.add('hidden');
+        tbody.innerHTML = '<tr><td colspan="3">Failed to load: ' + (e.message || e) + '</td></tr>';
+      }
+    }
+
+    checkHealth();
+    loadDatasets();
+    loadModels();
+  </script>
+</body>
+</html>

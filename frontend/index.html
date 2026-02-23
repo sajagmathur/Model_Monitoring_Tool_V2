@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model Monitoring | Banking</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="load-warning" class="load-warning hidden" role="alert">
+    Load the app from <strong>http://127.0.0.1:8080</strong> (run <code>run_app.ps1</code> or start backend + frontend). Do not open index.html as a file.
+  </div>
+  <header class="header">
+    <div>
+      <h1>Model Monitoring</h1>
+      <p class="subtitle">Banking – Acquisition, ECM, Scorecard, Collections, Fraud, ML</p>
+    </div>
+  </header>
+
+  <nav class="tab-nav" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+    <button type="button" class="tab-btn" data-tab="analysis" role="tab" aria-selected="false">Analysis</button>
+  </nav>
+
+  <main class="main">
+    <div id="dashboard-panel" class="tab-panel active" role="tabpanel">
+    <section class="workflow card">
+      <h2>Data workflow – Upload to scoring to metrics</h2>
+      <p class="workflow-desc">Follow the steps below: upload data, run QC, score (if needed), then compute metrics and view results.</p>
+      <div class="stepper">
+        <div class="step" data-step="1">
+          <div class="step-header">
+            <span class="step-num">1</span>
+            <span class="step-title">Upload data</span>
+            <span class="step-status" id="wf-status-1"></span>
+          </div>
+          <div class="step-body">
+            <div class="workflow-form">
+              <label>Portfolio</label>
+              <select id="wf-portfolio"><option value="">Select</option></select>
+              <label>Model type</label>
+              <select id="wf-model-type"><option value="">Select</option></select>
+              <label>Model ID</label>
+              <input type="text" id="wf-model-id" placeholder="e.g. ACQ-RET-002" />
+              <label>Vintage</label>
+              <select id="wf-vintage"><option value="">Select</option></select>
+              <label>Data (paste JSON array, e.g. [{"target":0,"score":0.2},{"target":1,"score":0.8}])</label>
+              <textarea id="wf-data-paste" rows="4" placeholder='[{"target":0,"score":0.3},{"target":1,"score":0.7},...]'></textarea>
+              <button type="button" id="wf-upload" class="btn btn-primary">Upload</button>
+            </div>
+            <div id="wf-upload-result" class="workflow-result hidden"></div>
+          </div>
+        </div>
+        <div class="step" data-step="2">
+          <div class="step-header">
+            <span class="step-num">2</span>
+            <span class="step-title">Data QC</span>
+            <span class="step-status" id="wf-status-2"></span>
+          </div>
+          <div class="step-body">
+            <p class="step-hint">Run QC on the uploaded dataset.</p>
+            <button type="button" id="wf-run-qc" class="btn btn-primary" disabled>Run QC</button>
+            <div id="wf-qc-result" class="workflow-result hidden"></div>
+          </div>
+        </div>
+        <div class="step" data-step="3">
+          <div class="step-header">
+            <span class="step-num">3</span>
+            <span class="step-title">Scoring</span>
+            <span class="step-status" id="wf-status-3"></span>
+          </div>
+          <div class="step-body">
+            <p class="step-hint">If your data has no score/probability, run scoring. Otherwise skip.</p>
+            <button type="button" id="wf-run-score" class="btn btn-primary" disabled>Run scoring</button>
+            <div id="wf-score-result" class="workflow-result hidden"></div>
+          </div>
+        </div>
+        <div class="step" data-step="4">
+          <div class="step-header">
+            <span class="step-num">4</span>
+            <span class="step-title">Compute metrics</span>
+            <span class="step-status" id="wf-status-4"></span>
+          </div>
+          <div class="step-body">
+            <p class="step-hint">Compute monitoring metrics (KS, PSI, AUC, etc.) for this dataset.</p>
+            <button type="button" id="wf-compute" class="btn btn-primary" disabled>Compute metrics</button>
+            <div id="wf-compute-result" class="workflow-result hidden"></div>
+          </div>
+        </div>
+        <div class="step" data-step="5">
+          <div class="step-header">
+            <span class="step-num">5</span>
+            <span class="step-title">Next steps – View results</span>
+            <span class="step-status" id="wf-status-5"></span>
+          </div>
+          <div class="step-body">
+            <p class="step-hint">Metrics are ready. View them in Summary or Trends.</p>
+            <button type="button" id="wf-goto-summary" class="btn btn-primary">View in Summary</button>
+            <button type="button" id="wf-goto-trends" class="btn btn-primary">View in Trends</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="portfolio-summary-level card">
+      <h2>Portfolio level summary</h2>
+      <p class="workflow-desc">Aggregated view by portfolio: model counts and status breakdown (Green / Amber / Red).</p>
+      <div id="portfolio-summary-loading" class="loading">Loading…</div>
+      <div id="portfolio-summary-chart-wrap" class="portfolio-rag-chart-wrap hidden">
+        <div class="portfolio-rag-chart-header">
+          <h3>RAG status distribution</h3>
+          <span id="rag-filter-indicator" class="rag-filter-indicator hidden"></span>
+        </div>
+        <canvas id="portfolio-rag-pie" width="280" height="280"></canvas>
+      </div>
+      <div id="portfolio-summary-table-wrap" class="table-wrap hidden">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Portfolio</th>
+              <th>Models</th>
+              <th>Green</th>
+              <th>Amber</th>
+              <th>Red</th>
+              <th>Commentary</th>
+            </tr>
+          </thead>
+          <tbody id="portfolio-summary-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="portfolio-view card">
+      <h2>Overall portfolio view</h2>
+      <p class="workflow-desc">Model status: Green = healthy, Amber = review, Red = attention needed (based on KS and PSI).</p>
+      <div id="portfolio-loading" class="loading">Loading…</div>
+      <div id="portfolio-grid" class="portfolio-grid hidden"></div>
+    </section>
+
+    <section class="filters card">
+      <h2>Filters</h2>
+      <div class="filter-row">
+        <label>Portfolio</label>
+        <select id="filter-portfolio">
+          <option value="">All</option>
+        </select>
+        <label>Model type</label>
+        <select id="filter-model-type">
+          <option value="">All</option>
+        </select>
+        <label>Vintage</label>
+        <select id="filter-vintage">
+          <option value="">All</option>
+        </select>
+        <label>Segment</label>
+        <select id="filter-segment">
+          <option value="">All</option>
+        </select>
+        <button id="btn-apply" class="btn btn-primary">Apply</button>
+      </div>
+    </section>
+
+    <section class="summary card">
+      <h2>Summary – Model performance</h2>
+      <p class="workflow-desc">
+        <button type="button" id="btn-download-excel" class="btn btn-primary">Download as Excel</button>
+        <button type="button" id="btn-download-ppt" class="btn btn-primary">Download charts as PPT</button>
+      </p>
+      <div class="commentary-section">
+        <h3>Commentary (included in PPT export)</h3>
+        <textarea id="metrics-commentary" rows="4" placeholder="Add notes, insights, or executive summary. This will be included as a slide when downloading charts as PPT."></textarea>
+      </div>
+      <div id="summary-loading" class="loading">Loading…</div>
+      <div id="summary-table-wrap" class="table-wrap hidden">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Model ID</th>
+              <th>Portfolio</th>
+              <th>Model type</th>
+              <th>Vintage</th>
+              <th>Segment</th>
+              <th>KS</th>
+              <th>PSI</th>
+              <th>AUC</th>
+              <th>Other</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="summary-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="trends card">
+      <h2>Trends by model</h2>
+      <div class="filter-row">
+        <label>Select model</label>
+        <select id="trend-model">
+          <option value="">-- Select model --</option>
+        </select>
+        <button id="btn-load-trends" class="btn btn-primary">Load trends</button>
+      </div>
+      <div id="trends-loading" class="loading hidden">Loading trends…</div>
+      <div id="trends-charts" class="trends-charts hidden">
+        <div class="chart-wrap">
+          <h3>KS trend</h3>
+          <canvas id="chart-ks" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <h3>PSI trend</h3>
+          <canvas id="chart-psi" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <h3>Bad rate trend</h3>
+          <canvas id="chart-bad-rate" width="400" height="200"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <h3>Volume trend</h3>
+          <canvas id="chart-volume" width="400" height="200"></canvas>
+        </div>
+      </div>
+      <div id="trends-insights" class="trends-insights hidden">
+        <h3>Trend insights</h3>
+        <div id="trends-insights-content"></div>
+      </div>
+    </section>
+
+    <section class="segment-level card">
+      <h2>Segment level – Acquisition Scorecard</h2>
+      <p class="workflow-desc">Thin file (limited credit history) vs thick file (established credit) metrics. Available for Acquisition Scorecard models only.</p>
+      <div class="filter-row">
+        <label>Model</label>
+        <select id="seg-model">
+          <option value="">-- Select model --</option>
+        </select>
+        <label>Vintage</label>
+        <select id="seg-vintage">
+          <option value="">-- Select vintage --</option>
+        </select>
+        <button id="btn-load-segments" class="btn btn-primary">Load segments</button>
+      </div>
+      <div id="segments-loading" class="loading hidden">Loading…</div>
+      <div id="segments-error" class="workflow-result error hidden"></div>
+      <div id="segments-table-wrap" class="table-wrap hidden">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Segment</th>
+              <th>KS</th>
+              <th>PSI</th>
+              <th>AUC</th>
+              <th>Volume</th>
+              <th>Bad rate</th>
+            </tr>
+          </thead>
+          <tbody id="segments-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="variable-stability card">
+      <h2>Variable-level stability analysis</h2>
+      <p class="workflow-desc">PSI and stability status per variable for the selected model and vintage.</p>
+      <div class="filter-row">
+        <label>Model</label>
+        <select id="stab-model">
+          <option value="">-- Select model --</option>
+        </select>
+        <label>Vintage</label>
+        <select id="stab-vintage">
+          <option value="">-- Select vintage --</option>
+        </select>
+        <button id="btn-load-stability" class="btn btn-primary">Load stability</button>
+      </div>
+      <div id="stability-loading" class="loading hidden">Loading…</div>
+      <div id="stability-table-wrap" class="table-wrap hidden">
+        <table class="data-table">
+          <thead>
+            <tr><th>Variable</th><th>PSI</th><th>Status</th></tr>
+          </thead>
+          <tbody id="stability-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="detail-section" class="detail card hidden">
+      <h2>Detail – <span id="detail-title"></span></h2>
+      <div id="detail-content"></div>
+    </section>
+    </div>
+
+    <div id="analysis-panel" class="tab-panel" role="tabpanel" hidden>
+      <section class="analysis-tab card">
+        <h2>Analysis – Deep dive on Volume, KS and PSI trends</h2>
+        <p class="workflow-desc">Select a model to view trend charts and insights for Volume, KS, and PSI, plus decile and variable-level analysis.</p>
+        <div class="filter-row">
+          <label>Model</label>
+          <select id="analysis-model">
+            <option value="">-- Select model --</option>
+          </select>
+          <label>Vintage</label>
+          <select id="analysis-vintage">
+            <option value="">-- Select vintage --</option>
+          </select>
+          <label>Segment</label>
+          <select id="analysis-segment">
+            <option value="">All</option>
+            <option value="thin_file">Thin file</option>
+            <option value="thick_file">Thick file</option>
+          </select>
+          <button id="btn-load-analysis" class="btn btn-primary">Load analysis</button>
+        </div>
+        <div id="analysis-loading" class="loading hidden">Loading…</div>
+        <div id="analysis-content" class="hidden">
+          <div class="analysis-block trends-deep-dive">
+            <h3>Volume, KS and PSI trends</h3>
+            <div class="analysis-trends-charts">
+              <div class="chart-wrap"><h4>Volume trend</h4><canvas id="analysis-chart-volume" width="400" height="200"></canvas></div>
+              <div class="chart-wrap"><h4>KS trend</h4><canvas id="analysis-chart-ks" width="400" height="200"></canvas></div>
+              <div class="chart-wrap"><h4>PSI trend</h4><canvas id="analysis-chart-psi" width="400" height="200"></canvas></div>
+            </div>
+            <div id="analysis-trends-insights" class="trends-insights"></div>
+          </div>
+          <div class="analysis-block ks-analysis">
+            <h3>KS Analysis – Decile-level view (reason for trigger)</h3>
+            <div id="analysis-ks-trigger" class="insight-box"></div>
+            <div id="analysis-decile-table-wrap" class="table-wrap"></div>
+            <div id="analysis-decile-commentary" class="commentary-box"></div>
+          </div>
+          <div class="analysis-block psi-analysis">
+            <h3>PSI Deep dive – Variable analysis</h3>
+            <div id="analysis-psi-trigger" class="insight-box"></div>
+            <div id="analysis-variable-table-wrap" class="table-wrap"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- GenAI Chatbot -->
+  <div id="chat-widget" class="chat-widget">
+    <button type="button" id="chat-toggle" class="chat-toggle" aria-label="Open model performance assistant">Ask about performance</button>
+    <div id="chat-panel" class="chat-panel hidden">
+      <div class="chat-panel-header">
+        <span>Model performance assistant</span>
+        <button type="button" id="chat-close" class="chat-close" aria-label="Close">×</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div id="chat-suggestions" class="chat-suggestions">
+        <span class="chat-suggest-label">Try asking:</span>
+        <button type="button" class="chat-suggest-btn" data-query="Which models need attention?">Which models need attention?</button>
+        <button type="button" class="chat-suggest-btn" data-query="What does RAG status mean?">What does RAG status mean?</button>
+        <button type="button" class="chat-suggest-btn" data-query="Compare portfolio performance">Compare portfolios</button>
+        <button type="button" class="chat-suggest-btn" data-query="Explain KS and PSI">Explain KS and PSI</button>
+      </div>
+      <div class="chat-input-wrap">
+        <input type="text" id="chat-input" placeholder="Ask about model performance, KS, PSI, RAG status, portfolios…" />
+        <button type="button" id="chat-send" class="btn btn-primary">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- For deployment: set API base before app.js, e.g. <script>window.__CONFIG__ = { API_BASE: 'https://api.yourserver.com' };</script> -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>
