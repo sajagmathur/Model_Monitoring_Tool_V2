@@ -76,7 +76,7 @@ async function tryApiOrMock(apiCall, mockCall) {
   
   // If backend is known to be unavailable, use mock directly
   if (backendAvailable === false) {
-    return mockCall();
+    return await mockCall();
   }
   
   // Try backend API
@@ -88,10 +88,14 @@ async function tryApiOrMock(apiCall, mockCall) {
     clearTimeout(timeoutId);
     return result;
   } catch (error) {
-    // Fallback to mock on error
-    console.log('API call failed, using mock data');
+    // Check if it's an abort error
+    if (error.name === 'AbortError') {
+      console.log('API call timeout, using mock data');
+    } else {
+      console.log('API call failed:', error.message, '- using mock data');
+    }
     backendAvailable = false;
-    return mockCall();
+    return await mockCall();
   }
 }
 
@@ -532,16 +536,22 @@ async function chatSend() {
   appendChatMessage('user', msg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   try {
-    const res = await fetch(`${API_BASE}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg }),
-    });
-    const data = await res.json().catch(() => ({}));
-    const reply = data.reply || (data.error || 'Could not get a response.');
+    const reply = await tryApiOrMock(
+      async (signal) => {
+        const res = await fetch(`${API_BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg }),
+          signal
+        });
+        const data = await res.json().catch(() => ({}));
+        return data.reply || (data.error || 'Could not get a response.');
+      },
+      () => window.MOCK_API.chat(msg)
+    );
     appendChatMessage('bot', reply);
   } catch (e) {
-    appendChatMessage('bot', 'Network error. Is the backend running at ' + API_BASE + '?');
+    appendChatMessage('bot', 'Sorry, I encountered an error processing your request.');
   }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -1239,13 +1249,30 @@ function loadTrends(modelIdOverride, segmentOverride) {
   const modelId = modelIdOverride != null ? modelIdOverride : (trendModelSelect && trendModelSelect.value);
   if (!modelId) return;
   if (trendModelSelect && modelIdOverride != null) trendModelSelect.value = modelId;
+  
+  if (!trendsCharts || !trendsLoading) {
+    console.error('Trends DOM elements not found');
+    return;
+  }
+  
   trendsCharts.classList.add('hidden');
   trendsLoading.classList.remove('hidden');
+  trendsLoading.textContent = 'Loading trends...';
+  
+  console.log('Loading trends for model:', modelId);
+  
   getTrends(modelId, segmentOverride).then(data => {
+    console.log('Trends data received:', data);
     trendsLoading.classList.add('hidden');
     destroyCharts();
     renderTrendCharts(data);
-    trendsCharts.classList.remove('hidden');
+    if (data && data.vintages && data.vintages.length > 0) {
+      trendsCharts.classList.remove('hidden');
+      console.log('Trends charts displayed');
+    } else {
+      trendsLoading.textContent = 'No trend data available for this model.';
+      trendsLoading.classList.remove('hidden');
+    }
   }).catch((err) => {
     console.error('Trends error:', err);
     trendsLoading.textContent = backendAvailable === false ? 'No trend data available in demo mode for this model.' : 'Failed to load trends.';
@@ -1254,11 +1281,24 @@ function loadTrends(modelIdOverride, segmentOverride) {
 }
 
 function renderTrendCharts(data) {
+  // Safety check for data
+  if (!data) {
+    console.error('No data provided to renderTrendCharts');
+    return;
+  }
+  
   let labels = data.vintages || [];
   let ksValues = (data.ks || []).map(v => v == null ? 0 : v);
   let psiValues = (data.psi || []).map(v => v == null ? 0 : v);
   let volumeValues = data.volume || [];
   let badRateValues = (data.bad_rate || []).map(v => v == null ? 0 : v);
+  
+  // Check if we have data to display
+  if (labels.length === 0) {
+    console.warn('No trend data to display');
+    return;
+  }
+  
   const selectedVintage = filterVintage?.value;
   if (selectedVintage && labels.length) {
     const idx = labels.indexOf(selectedVintage);
@@ -1282,7 +1322,18 @@ function renderTrendCharts(data) {
     }
   };
 
-  chartKS = new Chart(document.getElementById('chart-ks'), {
+  // Check if canvas elements exist before creating charts
+  const ksCanvas = document.getElementById('chart-ks');
+  const psiCanvas = document.getElementById('chart-psi');
+  const badRateCanvas = document.getElementById('chart-bad-rate');
+  const volumeCanvas = document.getElementById('chart-volume');
+  
+  if (!ksCanvas || !psiCanvas || !badRateCanvas || !volumeCanvas) {
+    console.error('Chart canvas elements not found');
+    return;
+  }
+
+  chartKS = new Chart(ksCanvas, {
     type: 'line',
     data: {
       labels,
@@ -1304,7 +1355,7 @@ function renderTrendCharts(data) {
     }
   });
 
-  chartPSI = new Chart(document.getElementById('chart-psi'), {
+  chartPSI = new Chart(psiCanvas, {
     type: 'line',
     data: {
       labels,
@@ -1326,7 +1377,7 @@ function renderTrendCharts(data) {
     }
   });
 
-  chartBadRate = new Chart(document.getElementById('chart-bad-rate'), {
+  chartBadRate = new Chart(badRateCanvas, {
     type: 'line',
     data: {
       labels,
@@ -1348,7 +1399,7 @@ function renderTrendCharts(data) {
     }
   });
 
-  chartVolume = new Chart(document.getElementById('chart-volume'), {
+  chartVolume = new Chart(volumeCanvas, {
     type: 'bar',
     data: {
       labels,
