@@ -620,18 +620,44 @@ window.MOCK_API = {
     await this._delay(500);
     const msg = message.toLowerCase();
     
+    // Specific question patterns
+    if (msg.includes('attention') || msg.includes('need') && msg.includes('monitor')) {
+      return '**Models requiring attention:**\n\n**ACQ-ML-003** - PSI = 0.052 (approaching 0.1 threshold). Distribution drift detected, requires investigation.\n\n**ECM-LIMIT-001** - PSI = 0.031 (moderate). Performance slightly below peers with KS = 0.388.\n\n**Action items:**\n• Review ACQ-ML-003 input variable distributions\n• Consider model recalibration if PSI exceeds 0.1\n• Monitor ECM model for further degradation';
+    }
+    
+    if (msg.includes('rag') || msg.includes('red') && msg.includes('amber') || msg.includes('status') && msg.includes('mean')) {
+      return '**RAG Status Indicators:**\n\n🟢 **Green** - Model performing well\n• KS > 0.4 AND PSI < 0.1\n• Strong discrimination, stable population\n\n🟡 **Amber** - Warning, needs monitoring\n• KS 0.3-0.4 OR PSI 0.1-0.25\n• Moderate performance or distribution shift\n\n🔴 **Red** - Action required\n• KS < 0.3 OR PSI > 0.25\n• Poor discrimination or significant drift\n\nIn demo data: Most models are Green, ECM-LIMIT-001 is Amber';
+    }
+    
+    if (msg.includes('compare') && msg.includes('portfolio')) {
+      return '**Portfolio Comparison:**\n\n**Acquisition** (3 models)\n• Best performer: ACQ-RET-002 (ML) - KS: 0.523, AUC: 0.876\n• Stable: ACQ-RET-001 (Scorecard) - KS: 0.452, PSI: 0.023\n• Watch: ACQ-ML-003 - PSI elevated at 0.052\n\n**ECM** (1 model)\n• ECM-LIMIT-001 - KS: 0.388, needs improvement\n\n**Collections** (1 model)\n• COL-RISK-001 - KS: 0.412, recovery rate: 62%\n\n**Fraud** (1 model)\n• FRD-TXN-001 - Excellent: KS: 0.623, 89% detection rate\n\n**Winner:** Fraud portfolio leads in performance';
+    }
+    
+    if ((msg.includes('explain') || msg.includes('what')) && msg.includes('ks') && msg.includes('psi')) {
+      return '**KS (Kolmogorov-Smirnov):**\nMeasures model discrimination - how well it separates good vs bad customers.\n• Range: 0 to 1\n• Target: > 0.4 (good), > 0.5 (excellent)\n• Calculation: Max difference between cumulative distributions\n• Use: Assess predictive power\n\n**PSI (Population Stability Index):**\nMeasures distribution drift - how much the scored population has changed.\n• Range: 0 to infinity (typically < 0.5)\n• Thresholds: < 0.1 stable, 0.1-0.25 monitor, > 0.25 action\n• Calculation: Sum of (actual% - expected%) × ln(actual%/expected%)\n• Use: Detect population shifts\n\n**Together:** KS shows if model works, PSI shows if population changed. Both stable = healthy model!';
+    }
+    
     // Simple pattern matching for demo chatbot
-    if (msg.includes('ks') || msg.includes('kolmogorov')) {
+    if (msg.includes('ks') && !msg.includes('psi')) {
       return 'KS (Kolmogorov-Smirnov) statistic measures the maximum difference between cumulative distributions of good and bad customers. Values above 0.4 indicate good discrimination. In our demo data, most models show KS between 0.38-0.62.';
     }
-    if (msg.includes('psi')) {
+    if (msg.includes('psi') && !msg.includes('ks')) {
       return 'PSI (Population Stability Index) measures distribution drift. PSI < 0.1 is stable, 0.1-0.25 needs monitoring, >0.25 requires action. Demo models show PSI ranging from 0.018 to 0.052, indicating stable populations.';
     }
     if (msg.includes('auc') || msg.includes('roc')) {
       return 'AUC (Area Under ROC Curve) ranges from 0.5 (random) to 1.0 (perfect). Values above 0.7 are acceptable, above 0.8 are good. Our demo fraud model achieves 0.91 AUC, showing excellent performance.';
     }
-    if (msg.includes('model') && msg.includes('perform')) {
+    if (msg.includes('gini')) {
+      return 'Gini coefficient measures inequality in model predictions. Gini = 2×AUC - 1, ranging from 0 to 1. Values above 0.6 are good. It represents the area between the Lorenz curve and diagonal, indicating model lift.';
+    }
+    if ((msg.includes('model') || msg.includes('which')) && msg.includes('perform')) {
       return 'Based on demo data: **ACQ-RET-002** (ML) shows the best overall performance with KS=0.523 and AUC=0.876. **FRD-TXN-001** (Fraud) excels with KS=0.623 and 89% fraud detection rate. All models maintain stable PSI values.';
+    }
+    if (msg.includes('best') || msg.includes('top')) {
+      return '**Top 3 Models:**\n1. **FRD-TXN-001** (Fraud) - KS: 0.623, AUC: 0.912, 89% detection rate\n2. **ACQ-RET-002** (ML) - KS: 0.523, AUC: 0.876, excellent all-round\n3. **ACQ-ML-003** (ML) - KS: 0.499, AUC: 0.857 (watch PSI)\n\nAll three show strong discrimination with KS > 0.49';
+    }
+    if (msg.includes('worst') || msg.includes('poor')) {
+      return '**Models needing improvement:**\n• **ECM-LIMIT-001** - KS: 0.388 (below 0.4 threshold)\n• Moderate discrimination, consider enhancement\n• PSI: 0.031 (acceptable)\n\nNot necessarily "bad", but has room for optimization compared to other models in the portfolio.';
     }
     if (msg.includes('trend')) {
       return 'Demo trend analysis shows stable KS performance across vintages for most models. PSI has slightly increased for ACQ-ML-003, suggesting potential distribution drift that requires monitoring.';
@@ -639,15 +665,18 @@ window.MOCK_API = {
     if (msg.includes('segment')) {
       return 'Segment analysis reveals that thick_file segments consistently outperform thin_file segments. For ACQ-RET-001, thick_file shows KS=0.492 vs thin_file KS=0.388, highlighting the importance of segment-level monitoring.';
     }
-    if (msg.includes('recommendation') || msg.includes('recommend')) {
-      return 'Key recommendations from demo data:\n1. Monitor ACQ-ML-003 closely (PSI=0.052, approaching threshold)\n2. Investigate thick_file vs thin_file performance gaps\n3. Leverage fraud model success (FRD-TXN-001) as best practice\n4. Maintain current strategies for stable models';
+    if (msg.includes('recommendation') || msg.includes('recommend') || msg.includes('action')) {
+      return 'Key recommendations from demo data:\n1. Monitor ACQ-ML-003 closely (PSI=0.052, approaching threshold)\n2. Investigate thick_file vs thin_file performance gaps\n3. Leverage fraud model success (FRD-TXN-001) as best practice\n4. Consider ECM-LIMIT-001 enhancements to improve KS\n5. Maintain current strategies for stable models';
+    }
+    if (msg.includes('fraud')) {
+      return '**Fraud Model (FRD-TXN-001):**\n• KS: 0.623 (excellent)\n• AUC: 0.912 (outstanding)\n• Fraud detection rate: 89.45%\n• False positive rate: 2.34% (very low)\n• PSI: 0.019 (very stable)\n\nThis is the best performing model in the portfolio. Top decile captures 20% fraud rate vs 0.08% in bottom decile.';
     }
     if (msg.includes('hello') || msg.includes('hi') || msg.includes('help')) {
-      return 'Hello! I am your Model Monitoring assistant. I can help you understand:\n• **Metrics**: Ask about KS, PSI, AUC, Gini\n• **Models**: Compare model performance\n• **Trends**: Analyze trends over time\n• **Segments**: Understand segment-level insights\n\nWhat would you like to know?';
+      return 'Hello! I am your Model Monitoring assistant. I can help you understand:\n• **Metrics**: Ask about KS, PSI, AUC, Gini\n• **Models**: Which models need attention?\n• **RAG Status**: What do the color indicators mean?\n• **Portfolios**: Compare portfolio performance\n• **Trends**: Analyze performance over time\n\nWhat would you like to know?';
     }
     
     // Default response
-    return 'I understand you are asking about "' + message + '". In demo mode, I can discuss KS, PSI, AUC metrics, model performance, trends, and segment analysis. Try asking "Which model performs best?" or "What is PSI?"';
+    return 'I understand you are asking about "' + message + '". In demo mode, I can discuss:\n• KS, PSI, AUC metrics\n• Model performance comparisons\n• RAG status meanings\n• Portfolio analysis\n• Models needing attention\n\nTry: "Which models need attention?" or "Compare portfolios"';
   },
 
   _delay: function(ms = 300) {
