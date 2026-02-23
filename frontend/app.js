@@ -1056,7 +1056,9 @@ function initSegmentLevel(opts) {
         wrap.classList.remove('hidden');
       } catch (e) {
         loading.classList.add('hidden');
-        errorEl.textContent = e.message || 'Failed to load. Only available for Acquisition Scorecard models.';
+        errorEl.textContent = backendAvailable === false 
+          ? 'Segment data available for ACQ-RET-001 and ACQ-RET-002 in demo mode.'
+          : (e.message || 'Failed to load. Only available for Acquisition Scorecard models.');
         errorEl.classList.remove('hidden');
         wrap.classList.add('hidden');
       }
@@ -1244,8 +1246,9 @@ function loadTrends(modelIdOverride, segmentOverride) {
     destroyCharts();
     renderTrendCharts(data);
     trendsCharts.classList.remove('hidden');
-  }).catch(() => {
-    trendsLoading.textContent = 'Failed to load trends.';
+  }).catch((err) => {
+    console.error('Trends error:', err);
+    trendsLoading.textContent = backendAvailable === false ? 'No trend data available in demo mode for this model.' : 'Failed to load trends.';
     trendsLoading.classList.remove('hidden');
   });
 }

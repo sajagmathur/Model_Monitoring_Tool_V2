@@ -498,11 +498,28 @@ window.MOCK_API = {
 
   getTrends: async function(modelId, segment) {
     await this._delay();
-    const trends = MOCK_DATA.trends[modelId];
-    if (!trends) {
-      throw new Error('Trends not found');
+    const trendsData = MOCK_DATA.trends[modelId];
+    if (!trendsData) {
+      // Return default structure if no data found
+      return {
+        model_id: modelId,
+        vintages: [],
+        ks: [],
+        psi: [],
+        volume: [],
+        bad_rate: []
+      };
     }
-    return trends;
+    // Transform from array format to separate arrays
+    const trends = trendsData.trends || [];
+    return {
+      model_id: modelId,
+      vintages: trends.map(t => t.vintage),
+      ks: trends.map(t => t.KS),
+      psi: trends.map(t => t.PSI),
+      volume: trends.map(t => t.volume),
+      bad_rate: trends.map(t => t.bad_rate)
+    };
   },
 
   getVariableStability: async function(modelId, vintage) {
@@ -597,6 +614,40 @@ window.MOCK_API = {
         Gini: 0.6490
       }
     };
+  },
+
+  chat: async function(message) {
+    await this._delay(500);
+    const msg = message.toLowerCase();
+    
+    // Simple pattern matching for demo chatbot
+    if (msg.includes('ks') || msg.includes('kolmogorov')) {
+      return 'KS (Kolmogorov-Smirnov) statistic measures the maximum difference between cumulative distributions of good and bad customers. Values above 0.4 indicate good discrimination. In our demo data, most models show KS between 0.38-0.62.';
+    }
+    if (msg.includes('psi')) {
+      return 'PSI (Population Stability Index) measures distribution drift. PSI < 0.1 is stable, 0.1-0.25 needs monitoring, >0.25 requires action. Demo models show PSI ranging from 0.018 to 0.052, indicating stable populations.';
+    }
+    if (msg.includes('auc') || msg.includes('roc')) {
+      return 'AUC (Area Under ROC Curve) ranges from 0.5 (random) to 1.0 (perfect). Values above 0.7 are acceptable, above 0.8 are good. Our demo fraud model achieves 0.91 AUC, showing excellent performance.';
+    }
+    if (msg.includes('model') && msg.includes('perform')) {
+      return 'Based on demo data: **ACQ-RET-002** (ML) shows the best overall performance with KS=0.523 and AUC=0.876. **FRD-TXN-001** (Fraud) excels with KS=0.623 and 89% fraud detection rate. All models maintain stable PSI values.';
+    }
+    if (msg.includes('trend')) {
+      return 'Demo trend analysis shows stable KS performance across vintages for most models. PSI has slightly increased for ACQ-ML-003, suggesting potential distribution drift that requires monitoring.';
+    }
+    if (msg.includes('segment')) {
+      return 'Segment analysis reveals that thick_file segments consistently outperform thin_file segments. For ACQ-RET-001, thick_file shows KS=0.492 vs thin_file KS=0.388, highlighting the importance of segment-level monitoring.';
+    }
+    if (msg.includes('recommendation') || msg.includes('recommend')) {
+      return 'Key recommendations from demo data:\n1. Monitor ACQ-ML-003 closely (PSI=0.052, approaching threshold)\n2. Investigate thick_file vs thin_file performance gaps\n3. Leverage fraud model success (FRD-TXN-001) as best practice\n4. Maintain current strategies for stable models';
+    }
+    if (msg.includes('hello') || msg.includes('hi') || msg.includes('help')) {
+      return 'Hello! I am your Model Monitoring assistant. I can help you understand:\n• **Metrics**: Ask about KS, PSI, AUC, Gini\n• **Models**: Compare model performance\n• **Trends**: Analyze trends over time\n• **Segments**: Understand segment-level insights\n\nWhat would you like to know?';
+    }
+    
+    // Default response
+    return 'I understand you are asking about "' + message + '". In demo mode, I can discuss KS, PSI, AUC metrics, model performance, trends, and segment analysis. Try asking "Which model performs best?" or "What is PSI?"';
   },
 
   _delay: function(ms = 300) {
